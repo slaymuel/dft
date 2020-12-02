@@ -10,7 +10,7 @@ const kT = T * Constants.k_B
 const beta = 1.0 / (kT)
 const ε_r = 78.3
 const l_B = Constants.e^2 / (4.0 * pi * Constants.ε_0 * ε_r) * beta * 10.0^(10.0)
-h = 20.0
+h = 40.0
 const sigma = -1.0 / 200.0
 const mix = 0.004
 const dz = 0.05
@@ -34,17 +34,74 @@ struct Energy{T<:Function}
 end
 
 
+function find_root3p_v(a, b, c, guess)
+    p0 = -20.0
+    p1 = 20.0
+
+    int = [p0, p1]
+    mp = 0.0
+    f(x) = (b*exp(4.0 * x) + a*exp(x) + c)
+
+    if(f(p0) >= 0.0 || f(p1) <= 0.0)
+        println()
+        println("FAILED TO FIND ROOT!!!!!!!")
+        println()
+        return nothing
+    end
+
+    while true
+        mp = (int[1] + int[2]) / 2.0
+        if(f(mp) < 0.0)
+            int[1] = mp
+        else
+            int[2] = mp
+        end
+        if(abs(int[1] - int[2]) < 1e-15)
+            break
+        end
+        #if(abs(f(mp)) < 1e-10)
+        #    break
+        #end
+    end
+
+    return mp
+    #x0 = guess
+    #x1 = 0.0
+    #for i in 1:1000000
+    #    x1 = x0 - (b*exp(4.0 * x0) + a*exp(x0) + c) / (4.0*b*exp(4.0 * x0) + a*exp(x0))
+#
+    #    if((b*exp(4.0 * x1) + a*exp(x1) + c) < 1e-12)
+    #        break
+    #    end
+    #    #if(abs(x0 - x1) < 1e-10)
+    #    #    break
+    #    #end
+    #    x0 = x1
+    #end
+    #println(x1)
+    #return x1
+end
+
+
 function find_root3p(a, b, c, guess)
     x0 = guess
     x1 = 0.0
     for i in 1:1000000
         x1 = x0 - (b*x0^(4.0) + a*x0 + c) / (4.0*b*x0^(3.0) + a)
+        if(x1 < 0.0)
+            guess = guess + 1.0
+            x0 = guess
+            continue
 
-        if(abs(x0 - x1) < 1e-10)
+        elseif(abs(b*x1^(4.0) + a*x1 + c) < 1e-12)
             break
         end
+        #if(abs(x0 - x1) < 1e-10)
+        #    break
+        #end
         x0 = x1
     end
+
     return x1
 end
 
@@ -92,8 +149,8 @@ function hole(r::Float64)
     return (1.0 - exp(-lambda * r))
 end
 
-function hole(r::Float64, lambda::Float64)
-    return (1.0 - exp(-lambda * r))
+function hole(r::Float64, l::Float64)
+    return (1.0 - exp(-l * r))
 end
 
 
@@ -183,16 +240,68 @@ function update_densities!(p::D, n::D, donn::Float64, en::Energy)
     end
 
     charge = get_charge(pn_temp, nn_temp, p.q, n.q)
-
+    #println(charge)
     #Neutralize
     if(abs(charge) > 1e-10)
         dDonn = log(find_root3p(2.0*sigma, p.q*sum(pn_temp)*dz, n.q*sum(nn_temp)*dz, exp(donn)))
+        #dDonn = find_root3p_v(2.0*sigma, p.q*sum(pn_temp)*dz, n.q*sum(nn_temp)*dz, donn)
+
         pn_temp = pn_temp .* exp(p.q * dDonn)
         nn_temp = nn_temp .* exp(n.q * dDonn)
+        #donn = donn + mix * dDonn
         donn = donn + dDonn
     end
+
+    charge = get_charge(pn_temp, nn_temp, p.q, n.q)
+    if(abs(charge) > 1e-10)
+        println()
+        println("Suggestion is not electroneutral!")
+        println()
+    end
+
+    #for i in eachindex(p.n)
+    #    trat = pn_temp[i]/p.n[i]
+    #    if (trat > 1.0)
+    #        ttfdm = 2.0*p.n[i]-(p.n[i]^(2.0)) / pn_temp[i]
+    #        if (ttfdm < pn_temp[i])
+    #            pn_temp[i] = ttfdm
+    #        end
+    #    #else
+    #    #    ttfdm = p.n[i]-pn_temp[i]+(pn_temp[i]^(2.0))/p.n[i]
+    #    #    if (ttfdm > pn_temp[i])
+    #    #        pn_temp[i] = ttfdm
+    #    #    end
+    #    end
+    #end
+    #for i in eachindex(n.n)
+    #    trat = nn_temp[i]/n.n[i]
+    #    if (trat > 1.0)
+    #        ttfdm = 2.0*n.n[i]-(n.n[i]^(2.0)) / nn_temp[i]
+    #        if (ttfdm < nn_temp[i])
+    #            nn_temp[i] = ttfdm
+    #        end
+    #    #else
+    #    #    ttfdm = n.n[i]-nn_temp[i]+(nn_temp[i]^(2.0))/n.n[i]
+    #    #    if (ttfdm > nn_temp[i])
+    #    #        nn_temp[i] = ttfdm
+    #    #    end
+    #    end
+    #end
     p.n = (mix .* pn_temp .+ (1.0 - mix) .* p.n::Vector{Float64})
     n.n = (mix .* nn_temp .+ (1.0 - mix) .* n.n::Vector{Float64})  
+
+    #tfdm = new density
+    #fdm = old
+
+    #trat = tfdm/fdm
+    #if (trat.gt.1.d0) then
+    #   ttfdm = 2.d0*fdm-fdm**2/tfdm
+    #   if (ttfdm.lt.tfdm) then
+    #       rat = ttfdm/tfdm
+    #       tfdm = ttfdm
+    #       tfem = tfem*rat
+    #   endif
+    #endif
     return donn
 end
 
@@ -278,6 +387,20 @@ function run!(p::D, n::D, donn, en::Energy, iters)
     println("+cp: ", p.cp)
     println("-cp", n.cp)
     println("Bulk pressure: ", p_B)
+    println("sigma (wall charge): ", sigma)
+
+    charge = get_charge(p.n, n.n, p.q, n.q)
+    if(abs(charge) > 1e-10)
+        dDonn = log(find_root3p(2.0*sigma, p.q * sum(p.n)*dz, n.q * sum(n.n)*dz, exp(donn)))
+        #dDonn = find_root3p_v(2.0*sigma, p.q*sum(p.n)*dz, n.q*sum(n.n)*dz, donn)
+        #donn = donn + dDonn
+        donn = donn + dDonn
+        #p.n = p.n .* exp(p.q * dDonn)
+        #n.n = n.n .* exp(n.q * dDonn)
+    end
+    println("Donnan at start: ", donn)
+    charge = get_charge(p.n .* exp(p.q*donn), n.n .* exp(n.q*donn), p.q, n.q)
+    println("Initial charge: ", charge)
 
     for i in 0:iters
         charge = get_charge(p.n, n.n, p.q, n.q)
@@ -298,12 +421,8 @@ function run!(p::D, n::D, donn, en::Energy, iters)
 
         end
 
-        if(abs(charge) > 1e-10)
-            dDonn = log(find_root3p(2.0*sigma, p.q * sum(p.n)*dz, n.q * sum(n.n)*dz, exp(donn)))
-            donn = donn + dDonn
-        end
-
         donn = update_densities!(p, n, donn, en)
+
 
         #Symmetrize
         for i in 1:1:floor(Int, length(p.n) / 2.0)
@@ -312,7 +431,14 @@ function run!(p::D, n::D, donn, en::Energy, iters)
             n.n[i] = (n.n[i] + n.n[end-i+1]) / 2.0
             n.n[end-i+1] = n.n[i]
         end
-
+        if(abs(charge) > 1e-10)
+            #dDonn = log(find_root3p(2.0*sigma, p.q * sum(p.n)*dz, n.q * sum(n.n)*dz, exp(donn)))
+            #dDonn = find_root3p_v(2.0*sigma, p.q*sum(p.n)*dz, n.q*sum(n.n)*dz, donn)
+            #donn = donn + dDonn
+            #donn = dDonn
+            #p.n = p.n .* exp(p.q * dDonn)
+            #n.n = n.n .* exp(n.q * dDonn)
+        end
     end
     dp = get_pressure(p, n, p_B)
     gp = get_f(p, n, en)
