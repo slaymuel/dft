@@ -5,7 +5,7 @@ import ..D
 import ..Constants
 
 #Simulation Constants
-const T = 298.0
+const T = 298
 const kT = T * Constants.k_B
 const beta = 1.0 / (kT)
 const ε_r = 78.3
@@ -94,6 +94,28 @@ function find_root3p(a, b, c, guess)
             continue
 
         elseif(abs(b*x1^(4.0) + a*x1 + c) < 1e-12)
+            break
+        end
+        #if(abs(x0 - x1) < 1e-10)
+        #    break
+        #end
+        x0 = x1
+    end
+
+    return x1
+end
+
+function find_root2p(a, b, c, guess)
+    x0 = guess
+    x1 = 0.0
+    for i in 1:1000000
+        x1 = x0 - (b*x0^(3.0) + a*x0 + c) / (3.0*b*x0^(2.0) + a)
+        if(x1 < 0.0)
+            guess = guess + 1.0
+            x0 = guess
+            continue
+
+        elseif(abs(b*x1^(3.0) + a*x1 + c) < 1e-12)
             break
         end
         #if(abs(x0 - x1) < 1e-10)
@@ -240,10 +262,10 @@ function update_densities!(p::D, n::D, donn::Float64, en::Energy)
     end
 
     charge = get_charge(pn_temp, nn_temp, p.q, n.q)
-    #println(charge)
+    
     #Neutralize
     if(abs(charge) > 1e-10)
-        dDonn = log(find_root3p(2.0*sigma, p.q*sum(pn_temp)*dz, n.q*sum(nn_temp)*dz, exp(donn)))
+        dDonn = log(find_root2p(2.0*sigma, p.q*sum(pn_temp)*dz, n.q*sum(nn_temp)*dz, exp(donn)))
         #dDonn = find_root3p_v(2.0*sigma, p.q*sum(pn_temp)*dz, n.q*sum(nn_temp)*dz, donn)
 
         pn_temp = pn_temp .* exp(p.q * dDonn)
@@ -308,7 +330,6 @@ end
 function get_f(p::D, n::D, en::Energy)
     f = 0.0
     
-    #for i in eachindex(p.n)
     for i in 1:1:round(Int, length(p.n) / 2.0)
         z  = i*dz - dz
 
@@ -320,7 +341,6 @@ function get_f(p::D, n::D, en::Energy)
         f = f + p.n[i]*(log(p.n[i]) - 1.0 - p.cp)  #Ideal + legendre GC
     end
 
-    #for i in eachindex(n.n)
     for i in 1:1:round(Int, length(n.n) / 2.0)
         z  = i*dz - dz
 
@@ -329,14 +349,6 @@ function get_f(p::D, n::D, en::Energy)
 
         f = f + n.n[i]*(f_temp + external(z, n.q))
         f = f + n.n[i]*(log(n.n[i]) - 1.0 - n.cp)  #Ideal + legendre GC
-
-        #fel = fds*(srnsval*(VL*z+VR*hz)+0.5d0*uss+Vexs(iz))
-        #felns = fds*(0.5d0*uss+Vexs(iz))
-        #aeta = pis*cdmonm(iz)
-        #rxsib = 1.d0/(1.d0-aeta)
-        #ccc = -fds+ccc
-        #sumFsns = fds*(dlog(fds)-1.d0-chemps)+felns+sumFsns
-        #sumFs = fds*(dlog(fds)-1.d0-chemps)+fel+sumFs
     end
 
     f = 2.0 * f * dz -2.0*pi*h * l_B * sigma^2.0
@@ -355,7 +367,6 @@ function get_pressure(p::D, n::D, p_B)
 #      ** EXTRAPOLATION BY USE OF LINEAR EXPRESSION **
     fwcml = fp1S+0.5*(fp1S-c0Skv)
     if (fwcml < 1e-11) fwcmq = 0.0 end
-    #println("monomer contact density - quad. extr.: ", fwcmq)
     
     fp1S = n.n[1]
     fn1S = n.n[1 + 2]
@@ -366,7 +377,6 @@ function get_pressure(p::D, n::D, p_B)
     fwcsq = (c0Skv + c1Skv*1.5 + c2Skv*2.25)
     fwcsl = fp1S+0.5*(fp1S-c0Skv)
     if (fwcsl < 1e-11) fwcsq = 0.0 end
-    #println("solvent contact density - quad. extr.: ", fwcsq)
     VL = -2.0*pi*l_B*sigma
 
     Psubnet = fwcmq + fwcsq - p_B
@@ -391,9 +401,8 @@ function run!(p::D, n::D, donn, en::Energy, iters)
 
     charge = get_charge(p.n, n.n, p.q, n.q)
     if(abs(charge) > 1e-10)
-        dDonn = log(find_root3p(2.0*sigma, p.q * sum(p.n)*dz, n.q * sum(n.n)*dz, exp(donn)))
+        dDonn = log(find_root2p(2.0*sigma, p.q * sum(p.n)*dz, n.q * sum(n.n)*dz, exp(donn)))
         #dDonn = find_root3p_v(2.0*sigma, p.q*sum(p.n)*dz, n.q*sum(n.n)*dz, donn)
-        #donn = donn + dDonn
         donn = donn + dDonn
         #p.n = p.n .* exp(p.q * dDonn)
         #n.n = n.n .* exp(n.q * dDonn)
@@ -416,13 +425,9 @@ function run!(p::D, n::D, donn, en::Energy, iters)
                 println("Charge is NaN exiting...")
                 break
             end
-            #pressure = p.n[round(Int, 2.5 / dz)] + n.n[round(Int, 2.5 / dz)]
-            #println("Pressure: ", pressure)
-
         end
 
         donn = update_densities!(p, n, donn, en)
-
 
         #Symmetrize
         for i in 1:1:floor(Int, length(p.n) / 2.0)
